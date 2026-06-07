@@ -14,13 +14,10 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 @Service
-public class ParkingService {
+public class ParkingService extends ClientService{
 
     private final ParkingRepo parkingRepo;
     private final UsersRepo usersRepo;
@@ -35,6 +32,7 @@ public class ParkingService {
         this.transactionRepo = transactionRepo;
         this.emailService = emailService;
     }
+
 
     // שליפת כל 1,000 החניות
     public List<Parking> getAllSpots() {
@@ -59,7 +57,7 @@ public class ParkingService {
 
         return allSpots.stream()
                 // מוודא שהחניה קיימת והיא פנויה (false)
-                .filter(spot -> spot.getisOccupied() == false)
+                .filter(spot -> spot.isOccupied() == false)
                 .collect(Collectors.groupingBy(
                         Parking::getFloor,
                         Collectors.collectingAndThen(Collectors.counting(), Long::intValue)
@@ -70,17 +68,32 @@ public class ParkingService {
     public Parking getSuggestedSpot(String plate) {
         return parkingRepo.findAll().stream()
                 // אנחנו רוצים רק חניות שאינן תפוסות
-                .filter(spot -> !spot.getisOccupied())
+                .filter(spot -> !spot.isOccupied())
                 .findFirst()
                 .orElse(null);
     }
-    public String startParking(String plate, Integer hoursRequested) {
-        // 1. בדיקה אם הרכב כבר נמצא בחניון (מניעת כפילות)
+
+
+
+
+    public String startParking(String plate, Integer hoursRequested, String arrivalDate) {
+        // 1. בדיקה אם הרכב כבר נמצא בחניון
         if (parkingRepo.findByCurrentVehicleId(plate).isPresent()) {
             return "⚠️ הרכב " + plate + " כבר נמצא בתוך החניון.";
         }
 
-        // 2. חיפוש הרכב במאגר ובדיקת סוג לקוח (הלוגיקה שלך)
+        // 2. חישוב זמן התחלה (מתוך התאריך שהמשתמש בחר)
+        long startTime;
+        if (arrivalDate != null && !arrivalDate.isEmpty()) {
+            // המרת המחרוזת (למשל 2026-05-25T14:30) לזמן במילישניות
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+            LocalDateTime localDateTime = LocalDateTime.parse(arrivalDate, formatter);
+            startTime = localDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } else {
+            startTime = System.currentTimeMillis(); // ברירת מחדל: עכשיו
+        }
+
+        // 3. לוגיקה של סוג רכב (נשאר זהה)
         Vehicles vehicle = vehiclesRepo.findByLicensePlate(plate);
         String welcomeMessage;
         Long userId = null;
@@ -89,56 +102,53 @@ public class ParkingService {
         if (vehicle != null) {
             userId = vehicle.getUserId();
             vehicleType = vehicle.getVehicleType();
-            if ("HANDICAPPED".equalsIgnoreCase(vehicleType)) {
-                welcomeMessage = "♿ שלום רב! זוהה רכב נכה - החניה בחינם.";
-            } else {
-                welcomeMessage = "🚗 ברוך הבא לקוח רשום! (הנחה תחושב ביציאה).";
-            }
+            welcomeMessage = "HANDICAPPED".equalsIgnoreCase(vehicleType) ?
+                    "♿ שלום רב! זוהה רכב נכה - החניה בחינם." :
+                    "🚗 ברוך הבא לקוח רשום! (הנחה תחושב ביציאה).";
         } else {
             welcomeMessage = "👋 ברוך הבא אורח! הכניסה אושרה בתעריף מלא.";
         }
 
-        // 3. מציאת חניה פנויה
+        // 4. מציאת חניה
         int hoursForCheck = (hoursRequested != null && hoursRequested > 0) ? hoursRequested : 2;
         Parking spot = getSuggestedSpot(plate, hoursForCheck);
         if (spot == null) {
             return "❌ מצטערים, אין מקום פנוי בחניון כרגע.";
         }
 
-        // 4. חישוב זמנים לעסקה
-        long now = System.currentTimeMillis();
-        long estimatedEndTime = 0; // 0 אומר "ללא הגבלה"
+        // 5. חישוב זמנים לעסקה
+        long estimatedEndTime = 0;
         double initialPayment = 0;
 
         if (hoursRequested != null && hoursRequested > 0) {
-            estimatedEndTime = now + (hoursRequested * 3600000L); // המרה למילישניות
+            // הוספת השעות לזמן ההתחלה המחושב
+            estimatedEndTime = startTime + (hoursRequested * 3600000L);
 
-            // חישוב מחיר ראשוני (אם זה נכה - תמיד 0)
             if (!"HANDICAPPED".equalsIgnoreCase(vehicleType)) {
                 initialPayment = spot.getPricePerHour() * hoursRequested;
             }
         }
 
-        // 5. יצירת העסקה בטבלה שלך (Transactions)
+        // 6. יצירת העסקה
         Transactions transaction = new Transactions();
         transaction.setVehicleId(plate);
         transaction.setSpotId(spot.getSpotId());
-        transaction.setStartTime(now);
+        transaction.setStartTime(startTime); // משתמשים בזמן המחושב
         transaction.setEndTime(estimatedEndTime);
         transaction.setUserId(userId);
         transaction.setTotalPayment(initialPayment);
         transaction.setPaymentStatus(false);
 
-        transactionRepo.save(transaction); // שמירה בטבלת עסקאות
+        transactionRepo.save(transaction);
 
-        // 6. עדכון ושמירת החניה (נשאר כפי שהיה)
+        // 7. עדכון החניה
         spot.setOccupied(true);
         spot.setCurrentVehicleId(plate);
         parkingRepo.save(spot);
 
-        // 7. בניית הודעת סיום
-        String timeMode = (estimatedEndTime > 0) ? " ל-" + hoursRequested + " שעות" : " ללא הגבלת זמן";
-        return "✅ " + welcomeMessage + "\nכניסה מאושרת" + timeMode + ".\nסע לשלום לחניה: " + spot.getLocation();
+        return "✅ " + welcomeMessage + "\nהחניה הוזמנה בהצלחה!" +
+                "\nזמן התחלה: " + (arrivalDate != null ? arrivalDate : "עכשיו") +
+                "\nסע לשלום לחניה: " + spot.getLocation();
     }
     public String endParking(String plate, String method, String details) {
         // 1. חיפוש העסקה הפתוחה של הרכב (זאת שעדיין לא שולמה)
@@ -150,6 +160,7 @@ public class ParkingService {
             return "⚠️ שגיאה: לא נמצאה עסקה פעילה עבור הרכב " + plate;
         }
 
+        System.out.println("[EXIT_DEBUG] 3 ERROR: No active transaction found in DB for plate: " + plate);
         Transactions trans = transOpt.get();
         long now = System.currentTimeMillis();
         double finalPrice = 0;
@@ -185,6 +196,7 @@ public class ParkingService {
             }
         }
 
+        System.out.println("33333333333333333 active transaction found in DB for plate: " + plate);
         // 5. עדכון העסקה ושחרור החניה
         trans.setEndTime(now);
 
@@ -198,17 +210,7 @@ public class ParkingService {
 
         String durationStr = String.format("%.1f", durationMillis / 3600000.0);
 
-        if (vehicle != null && vehicle.getUserId() != 0) {
-            usersRepo.findById(vehicle.getUserId()).ifPresent(user -> {
-                if (user.getemail() != null && !user.getemail().isEmpty()) {
-                    emailService.sendParkingReceipt(
-                            user.getemail()
 
-                    );
-                    System.out.println("📧 קבלה נשלחה בהצלחה למייל: " + user.getemail());
-                }
-            });
-        }
         return "🚗 הרכב " + plate + " יצא.\n" +
                 "⏱️ זמן: " + durationStr + " שעות.\n" +
                 "💰 סכום: " + finalPrice + " ש\"ח.\n" +
@@ -331,15 +333,18 @@ public class ParkingService {
         long now = System.currentTimeMillis();
         long expectedEndTime = now + (expectedHours * 3600000L);
 
-        return parkingRepo.findAll().stream()
-                // 1. פנויה פיזית כרגע
-                .filter(spot -> !spot.getisOccupied())
+        // 1. שליפה ממוקדת: רק חניות שפנויות פיזית כרגע
+        List<Parking> physicalAvailableSpots = parkingRepo.findByIsOccupiedFalse();
 
-                // 2. בדיקה: האם יש מישהו שהזמין את המשבצת הזו "בתוך" חלון הזמן הזה?
-                .filter(spot -> !hasConflict(spot.getSpotId(), now, expectedEndTime))
+        // 2. שליפה ממוקדת: רק עסקאות פעילות שחופפות לחלון הזמן הזה
+        List<Transactions> conflictingTransactions = transactionRepo.findActiveTransactionsInTimeRange(now, expectedEndTime);
 
+        // 3. מציאת החניה הראשונה שאין לה שום הזמנה חופפת ברשימה המצומצמת
+        return physicalAvailableSpots.stream()
+                .filter(spot -> conflictingTransactions.stream()
+                        .noneMatch(t -> t.getSpotId() == spot.getSpotId()))
                 .findFirst()
-                .orElse(null);
+                .orElse(null); // מחזיר null אם הכל תפוס או מוזמן מראש
     }
 
     private boolean hasConflict(Long spotId, long start, long end) {
@@ -365,7 +370,7 @@ public class ParkingService {
             // 2. בדיקה האם החניה של ההזמנה הזו תפוסה פיזית כרגע
             Optional<Parking> spotOpt = parkingRepo.findById(reservation.getSpotId());
 
-            if (spotOpt.isPresent() && spotOpt.get().getisOccupied()) {
+            if (spotOpt.isPresent() && spotOpt.get().isOccupied()) {
                 Parking spot = spotOpt.get();
                 String currentCar = spot.getCurrentVehicleId();
 
@@ -377,6 +382,23 @@ public class ParkingService {
         }
     }
 
+    public boolean isSpotAvailable(long spotId, int expectedHours) {
+        // 1. שליפת החניה ובדיקה אם היא קיימת ופנויה פיזית כרגע
+        Optional<Parking> spotOpt = parkingRepo.findById(spotId);
+        if (spotOpt.isEmpty() || spotOpt.get().isOccupied()) {
+            return false; // החניה לא קיימת או שמישהו חונה בה פיזית עכשיו
+        }
+
+        // 2. חישוב זמנים
+        long now = System.currentTimeMillis();
+        long expectedEndTime = now + (expectedHours * 3600000L);
+
+        // 3. בדיקת התנגשויות עתידיות בלוח הזמנים עבור החניה הזו
+        List<Transactions> conflicts = transactionRepo.findConflictsForSpecificSpot(spotId, now, expectedEndTime);
+
+        // אם הרשימה ריקה - החניה פנויה לחלוטין בשעות האלו!
+        return conflicts.isEmpty();
+    }
 
     private void sendWarningAlert(String carPlate, String location, long startTimeMillis) {
         DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
@@ -398,51 +420,41 @@ public class ParkingService {
         }
     }
 
-    public String createTestData() {
+    public String processGateEntry(String plate) {
+        // 1. האם יש הזמנה פעילה לרכב הזה?
+        Optional<Transactions> transactionOpt = transactionRepo.findFirstByVehicleIdAndPaymentStatusFalse(plate);
 
-        System.out.println("--- מתחיל יצירת נתונים ---");
 
-//        Users testUser = new Users();
-//        testUser.setFullName("Tester");
-//        testUser.setemail("rp0556797395@gmail.com");
-//        testUser.setType("SUBSCRIBER");
-//        testUser.setPassword("SUBSCRIBER");
-//        testUser.setPhoneNumber("SUBSCRIBER");
-//        testUser.setStars(7);
-//        testUser.setBalance(7);
-//        testUser.setUserId(95);
-//
-//        System.out.println("מנסה לשמור משתמש...");
-//        testUser = usersRepo.save(testUser);
-//        System.out.println("✅ משתמש נשמר עם ID: " + testUser.getUserId());
-//
-//        Vehicles testVehicle = new Vehicles();
-//        testVehicle.setLicensePlate("TEST-123");
-//        testVehicle.setUserId(95);
-//        testVehicle.setVehicleId(35);
-//        testVehicle.setVehicleType("REGULAR");
-//        testVehicle.setUserId(testUser.getUserId());
-//
-//        System.out.println("מנסה לשמור רכב...");
-//        vehiclesRepo.save(testVehicle);
-//        System.out.println("✅ רכב TEST-123 נשמר.");
-//
-//        return "✅ הנתונים נוצרו בהצלחה! אפשר לבדוק מייל.";
-
-        try {
-            // שליחת מייל בדיקה עם נתונים קבועים
-            emailService.sendParkingReceipt(
-                    "rp0556797395@gmail.com"// כתובת הנמען
-                    // מיקום החניה
-            );
-            System.out.println("📧 המערכת ניסתה לשלוח את המייל בהצלחה!");
-        } catch (Exception e) {
-            // טיפול בשגיאות (למשל: בעיית התחברות לגוגל)
-            System.err.println("❌ שגיאה בשליחת המייל: " + e.getMessage());
-            e.printStackTrace();
+        if (transactionOpt.isEmpty()) {
+            return "❌ לא נמצאה הזמנה פעילה לרכב " + plate + ". פנה לעמדת שירות.";
         }
-        return "rrrr";
 
+        Transactions transaction = transactionOpt.get();
+        long now = System.currentTimeMillis();
 
+        // 2. הגדרת חלון זמן (למשל: אפשר להיכנס 30 דקות לפני, ועד שעתיים אחרי זמן ההזמנה)
+        long bufferBefore = 30 * 60 * 1000; // 30 דקות לפני
+        long bufferAfter = 120 * 60 * 1000; // שעתיים אחרי
+
+        if (now < (transaction.getStartTime() - bufferBefore)) {
+            return "⚠️ מוקדם מדי! ההזמנה שלך מתחילה ב-" + new Date(transaction.getStartTime());
+        }
+
+        if (now > (transaction.getStartTime() + bufferAfter)) {
+            return "⚠️ פג תוקף! ההזמנה הייתה לשעה " + new Date(transaction.getStartTime());
+        }
+
+        // 3. אם הגענו לפה - הכל תקין! פותחים שער.
+        // כאן אנחנו מבצעים את ה"כניסה" לחניון עצמו
+        Parking spot = parkingRepo.findById(transaction.getSpotId()).orElse(null);
+        if (spot != null) {
+            spot.setOccupied(true);
+            spot.setCurrentVehicleId(plate);
+            parkingRepo.save(spot);
+
+            return "✅ ברוך הבא! השער נפתח. סע לחניה מספר " + spot.getSpotId();
+        }
+
+        return "❌ שגיאה במציאת החניה שהוזמנה.";
     }
     }

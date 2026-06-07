@@ -14,7 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
-
+@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/api/transactions")
 public class TransactionsController {
@@ -26,6 +26,8 @@ public class TransactionsController {
         this.transactionsService = transactionsService;
         this.parkingService = parkingService;
     }
+
+
 
     @PostMapping("/pre-book")
     public ResponseEntity<String> preBookParking(

@@ -1,6 +1,8 @@
 package com.example.parking.Reposetories;
 import com.example.parking.Entities.Transactions;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -30,12 +32,21 @@ public interface TransactionsRepo extends JpaRepository<Transactions, Long> {
     //boolean existsByvehicleIdAndEndTime(String vehicleId, long endTime);
     List<Transactions>  findActiveByvehicleId(String plate, LocalDateTime now);
 
+
     // מוצא את כל הרכבים שחונים כרגע בחניון
     List<Transactions> findAllByEndTime(long endTime);
-    List<Transactions> findByUserId(long id);
+    List<Transactions> findByUserId(Long id);
 ///  ////////////////////////////////
     Optional<Transactions> findByVehicleIdAndPaymentStatusFalse(long vehicleId);
 
     List<Transactions> findByPaymentStatusFalse();
 
+    // בתוך TransactionsRepository.java
+    Optional<Transactions> findFirstByVehicleIdAndPaymentStatusFalse(String vehicleId);
+
+    @Query("SELECT t FROM Transactions t WHERE t.paymentStatus = false AND t.startTime < :expectedEndTime AND t.endTime > :now")
+    List<Transactions> findActiveTransactionsInTimeRange(@Param("now") long now, @Param("expectedEndTime") long expectedEndTime);
+
+    @Query("SELECT t FROM Transactions t WHERE t.spotId = :spotId AND t.paymentStatus = false AND t.startTime < :expectedEndTime AND t.endTime > :now")
+    List<Transactions> findConflictsForSpecificSpot(long spotId, long now, long expectedEndTime);
 }

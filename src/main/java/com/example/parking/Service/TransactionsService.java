@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
-public class TransactionsService {
+public class TransactionsService extends ClientService{
 
     private final TransactionsRepo transactionRepo;
     private final ParkingRepo parkingRepo;

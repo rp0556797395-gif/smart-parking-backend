@@ -1,11 +1,13 @@
 package com.example.parking.Entities;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import jakarta.persistence.*;
 import lombok.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+@Slf4j
 @NoArgsConstructor
     @AllArgsConstructor
     @Data
@@ -14,46 +16,42 @@ import org.springframework.web.bind.annotation.RequestParam;
     @Entity
     public class Vehicles {
         @Id
-        private long vehicleId;      // מזהה ייחודי לרכב
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private Long vehicleId;      // מזהה ייחודי לרכב
         private String licensePlate; // מספר רישוי הרכב
         //private long spotId;         // מזהה החניה שבה הרכב חנה (מצביע על ParkingSpot)
-        private long userId;
+        private Long userId;
         private String vehicleType;    // למשל: "נכים", "חשמלי", "רגיל"
 
-        public long getVehicleId() {
-            return vehicleId;
-        }
 
-        public void setVehicleId(long vehicleId) {
-            this.vehicleId = vehicleId;
-        }
+    // החיבור האוטומטי בצד של הרכב:
+    // עדכני את השדה המקשר החדש בצורה הבאה:
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "userId", insertable = false, updatable = false) // <-- התיקון כאן!
+    @JsonIgnoreProperties({"vehicles", "hibernateLazyInitializer", "handler"})
+    private Users user;
 
-        public long getUserId() {
-            return userId;
-        }
 
-        public void setUserId(long userId) {
-            this.userId = userId;
-        }
-
-        public String getLicensePlate() {
-            return licensePlate;
-        }
-
-        public void setLicensePlate(String licensePlate) {
-            this.licensePlate = licensePlate;
-        }
-
-        public String getVehicleType() {
-            return vehicleType;
-        }
-
-        public void setVehicleType(String vehicleType) {
-            this.vehicleType = vehicleType;
-        }
-
-        // אין צורך בגטרים וסטרים הודות ל-Lombok
+    public void setVehicleId(Long vehicleId) {
+        this.vehicleId = vehicleId;
     }
+
+    public void setLicensePlate(String licensePlate) {
+        this.licensePlate = licensePlate;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public void setVehicleType(String vehicleType) {
+        this.vehicleType = vehicleType;
+    }
+
+    public void setUser(Users user) {
+        this.user = user;
+    }
+}
 
 
 

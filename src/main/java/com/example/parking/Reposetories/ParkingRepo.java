@@ -28,4 +28,5 @@ public interface ParkingRepo extends JpaRepository<Parking, Long> {
     /////////////////
     boolean existsByIsOccupiedTrueAndCurrentVehicleId(String vehicleId);
 
+    boolean existsByFloorAndRowAndIndexAndIsOccupied(int floor, String row, int index, boolean b);
 }

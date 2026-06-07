@@ -11,7 +11,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/vehicles")
-
+@CrossOrigin(origins = "*")
 public class VehiclesController {
 @Autowired
     private final VehiclesService vehiclesService;
@@ -47,6 +47,7 @@ public class VehiclesController {
 //    public List<Vehicles> getVehiclesByUser(@PathVariable long userId) {
 //        return vehiclesService.getVehiclesByUserId(userId);
 //    }
+
 
 
     // הוספת רכב חדש למשתמש

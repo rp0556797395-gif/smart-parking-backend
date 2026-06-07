@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-public class AdminService {
+public class AdminService extends ClientService{
 
     private final TransactionsRepo transactionsRepo;
     private final AdminRepo adminRepo;

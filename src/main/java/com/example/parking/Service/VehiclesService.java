@@ -15,7 +15,7 @@ import java.util.Optional;
 
 @Service
 
-public class VehiclesService {
+public class VehiclesService extends ClientService{
 
     private final VehiclesRepo vehiclesRepo;
     private final UsersRepo usersRepo;

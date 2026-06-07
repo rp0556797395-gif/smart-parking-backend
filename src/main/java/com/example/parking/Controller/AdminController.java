@@ -23,14 +23,6 @@ public class AdminController {
     public Map<String, Object> getDailySummary() {
         return adminService.getDailyReport();
     }
-
-    /**
-     * Endpoint לקבלת סיכום נתונים יומי עבור ה-Dashboard
-     */
-
-    /**
-     * Endpoint לקבלת רשימת רכבים שחונים מעל 24 שעות (התראות פיקוח)
-     */
     @GetMapping("/alerts/overstay")
     public List<Transactions> getOverstayAlerts() {
         return adminService.getOverstayingVehicles();
@@ -39,7 +31,6 @@ public class AdminController {
     public Map<String, Object> getAdminDashboard() {
         // קריאה לסרוויס שיבצע את שלושת החישובים שביקשת
         Map<String, Object> stats = adminService.getAdminStats();
-
         // הוספת תיעוד לתשובה כדי שיהיה ברור מה חוזר ל-React
         // 1. "revenueToday" -> כמה כסף החניון הרוויח היום
         // 2. "starsGivenToday" -> כמה כוכבים חולקו היום
